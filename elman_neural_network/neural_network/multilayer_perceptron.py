@@ -101,8 +101,12 @@ class BaseMultilayerPerceptron(six.with_metaclass(ABCMeta, BaseEstimator)):
         hidden_activation = ACTIVATIONS[self.activation]
         # Iterate over the hidden layers
         for i in range(self.n_layers_ - 1):
+            # Calculate the net of neurons
             activations[i + 1] = safe_sparse_dot(activations[i],
                                                  self.coefs_[i])
+            # NAVAR'S:
+            # safe_sparse_dot(activations[i], self.coefs_[i])
+            #
             activations[i + 1] += self.intercepts_[i]
 
             # For the hidden layers
@@ -282,9 +286,16 @@ class BaseMultilayerPerceptron(six.with_metaclass(ABCMeta, BaseEstimator)):
         self.coefs_ = []
         self.intercepts_ = []
 
+        # The number of coefficents in a hidden layer are going its actual size
+        # plus
+        # the output of the next hidden layer 
+
         for i in range(self.n_layers_ - 1):
+            
             coef_init, intercept_init = self._init_coef(layer_units[i],
                                                         layer_units[i + 1])
+            
+            
             self.coefs_.append(coef_init)
             self.intercepts_.append(intercept_init)
 
@@ -337,8 +348,14 @@ class BaseMultilayerPerceptron(six.with_metaclass(ABCMeta, BaseEstimator)):
 
         self.n_outputs_ = y.shape[1]
 
-        layer_units = ([n_features] + hidden_layer_sizes +
-                       [self.n_outputs_])
+        # layer_units = ([n_features] + hidden_layer_sizes +
+        #                [self.n_outputs_])
+        ###########################################################################
+        # NAVAR'S
+        #
+        layer_units = ([n_features + hidden_layer_sizes[0]] + hidden_layer_sizes +
+                        [self.n_outputs_])
+        ###########################################################################
 
         # check random state
         self._random_state = check_random_state(self.random_state)
@@ -360,9 +377,16 @@ class BaseMultilayerPerceptron(six.with_metaclass(ABCMeta, BaseEstimator)):
             batch_size = np.clip(self.batch_size, 1, n_samples)
 
         # Initialize lists
-        activations = [X]
+        # activations = [X]
+        #####################################################
+        # NAVAR'S
+        # This has to be a list to maintain code operability
+        #####################################################
+        activations = [(np.concatenate((X, np.zeros((n_samples,hidden_layer_sizes[0]))), axis=1))]
+        #
         activations.extend(np.empty((batch_size, n_fan_out))
                            for n_fan_out in layer_units[1:])
+
         deltas = [np.empty_like(a_layer) for a_layer in activations]
 
         coef_grads = [np.empty((n_fan_in_, n_fan_out_)) for n_fan_in_,
@@ -507,10 +531,22 @@ class BaseMultilayerPerceptron(six.with_metaclass(ABCMeta, BaseEstimator)):
 
         try:
             for it in range(self.max_iter):
-                X, y = shuffle(X, y, random_state=self._random_state)
+                # Shuffle dataset
+                #############################################################################
+                # NAVAR'S
+                # Shuffle dataset is not necessary anymore.
+                # X, y = shuffle(X, y, random_state=self._random_state)
+                #############################################################################
                 accumulated_loss = 0.0
                 for batch_slice in gen_batches(n_samples, batch_size):
-                    activations[0] = X[batch_slice]
+                    # activations[0] = X[batch_slice]
+                    #########################################################################
+                    # NAVAR'S
+                    # batch_slice of activations
+                    activations[0] = activations[0][batch_slice]
+                    #########################################################################
+
+
                     batch_loss, coef_grads, intercept_grads = self._backprop(
                         X[batch_slice], y[batch_slice], activations, deltas,
                         coef_grads, intercept_grads)
