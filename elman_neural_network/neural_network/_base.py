@@ -88,9 +88,18 @@ def softmax(X):
     X_new : {array-like, sparse matrix}, shape (n_samples, n_features)
         The transformed data.
     """
-    tmp = X - X.max(axis=1)[:, np.newaxis]
+    #################################################
+    # NAVAR'S
+    # ---------
+    # There is no need to need to constrain axis=1 since we are using LMS.
+    #################################################
+    tmp = X - X.max()
     np.exp(tmp, out=X)
-    X /= X.sum(axis=1)[:, np.newaxis]
+    X /= X.sum()
+    #################################################
+    # tmp = X - X.max(axis=1)[:, np.newaxis]
+    # np.exp(tmp, out=X)
+    # X /= X.sum(axis=1)[:, np.newaxis]
 
     return X
 

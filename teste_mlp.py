@@ -1,7 +1,7 @@
 from elman_neural_network.neural_network import MLPClassifier
 
 
-mlp = MLPClassifier(hidden_layer_sizes=(10,), activation='relu', batch_size=50)
+mlp = MLPClassifier(hidden_layer_sizes=(10,), activation='relu', batch_size=5)
 
 
 from sklearn.datasets import load_iris

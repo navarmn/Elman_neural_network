@@ -99,25 +99,81 @@ class BaseMultilayerPerceptron(six.with_metaclass(ABCMeta, BaseEstimator)):
             logistic function
         """
         hidden_activation = ACTIVATIONS[self.activation]
+        #################################################
+        # NAVAR'S
+        # ---------
+        # There is a need to iterate over EACH ONE of the samples.
+        # By using a Elman we assume the data is a time series, and samples in each step are
+        # mutually correlated (autocorrelation matrix). So, the loss has to be calculate instantly,
+        # like in the LMS algorithm.
+        #################################################
+        # NAVAR'S
+        # ---------
+        # We have to iterate over each data before each layer
+        #################################################
+
         # Iterate over the hidden layers
-        for i in range(self.n_layers_ - 1):
+        #################################################
+        activations_buffer = activations    
+
+        for j in range(activations_buffer[0].shape[0]):
+            for i in range(self.n_layers_ - 1):
+                activations_buffer[i + 1][j] = safe_sparse_dot(activations_buffer[i][j],
+                                                                self.coefs_[i])
+
+                activations_buffer[i + 1][j] += self.intercepts_[i]
+                # For the last hidden layer
+                if (i + 1) != (self.n_layers_ - 1):
+                    activations_buffer[i + 1][j] = hidden_activation(activations_buffer[i + 1][j])
+                    #################################################
+                    # NAVAR'S
+                    # ---------
+                    # Refed the output of the n-hidden layer.
+                    # This is the context unit
+                    #################################################
+                    if j <= (activations_buffer[0].shape[0] - 2):
+                        activations_buffer[i][j + 1][self._n_features:] = activations_buffer[i + 1][j]
+
+            #################################################
             # Calculate the net of neurons
-            activations[i + 1] = safe_sparse_dot(activations[i],
-                                                 self.coefs_[i])
-            # NAVAR'S:
-            # safe_sparse_dot(activations[i], self.coefs_[i])
-            #
-            activations[i + 1] += self.intercepts_[i]
+            activations_buffer[i + 1][j] = safe_sparse_dot(activations_buffer[i][j],
+                                                            self.coefs_[i])
 
-            # For the hidden layers
-            if (i + 1) != (self.n_layers_ - 1):
-                activations[i + 1] = hidden_activation(activations[i + 1])
+            # For the output layer
+            output_activation = ACTIVATIONS[self.out_activation_]
+            activations_buffer[i + 1][j] = output_activation(activations_buffer[i + 1][j])
 
-        # For the last layer
-        output_activation = ACTIVATIONS[self.out_activation_]
-        activations[i + 1] = output_activation(activations[i + 1])
-
+        activations = activations_buffer
         return activations
+
+######## Here
+
+        # for i in range(self.n_layers_ - 1):
+        #     for j in range(activations_buffer[i].shape[0]):
+        #         activations_buffer[i][j] = safe_sparse_dot(activations_buffer[i + 1][j],
+        #                                                     self.coefs_[i])
+                                                            
+        #         # For the hidden layers
+        #         if (i + 1) != (self.n_layers_ - 1):
+        #             activations_buffer[i + 1][j] = hidden_activation(activations_buffer[i + 1][j])  
+        #     #################################################
+        #     # Calculate the net of neurons
+        #     activations[i + 1] = safe_sparse_dot(activations[i],
+        #                                          self.coefs_[i])
+        #     # NAVAR'S:
+        #     # safe_sparse_dot(activations[i], self.coefs_[i])
+        #     #
+        #     activations[i + 1] += self.intercepts_[i]
+
+        #     # For the hidden layers
+        #     if (i + 1) != (self.n_layers_ - 1):
+        #         activations[i + 1] = hidden_activation(activations[i + 1])
+
+        # # For the last layer
+        # output_activation = ACTIVATIONS[self.out_activation_]
+        # activations[i + 1] = output_activation(activations[i + 1])
+
+        # return activations
 
     def _compute_loss_grad(self, layer, n_samples, activations, deltas,
                            coef_grads, intercept_grads):
@@ -342,6 +398,8 @@ class BaseMultilayerPerceptron(six.with_metaclass(ABCMeta, BaseEstimator)):
         X, y = self._validate_input(X, y, incremental)
         n_samples, n_features = X.shape
 
+        self._n_features = n_features
+
         # Ensure y is 2D
         if y.ndim == 1:
             y = y.reshape((-1, 1))
@@ -382,7 +440,9 @@ class BaseMultilayerPerceptron(six.with_metaclass(ABCMeta, BaseEstimator)):
         # NAVAR'S
         # This has to be a list to maintain code operability
         #####################################################
-        activations = [(np.concatenate((X, np.zeros((n_samples,hidden_layer_sizes[0]))), axis=1))]
+        X_expanded = (np.concatenate((X, np.zeros((n_samples,hidden_layer_sizes[0]))), axis=1))
+        activations = [X_expanded]
+        # activations = [(np.concatenate((X, np.zeros((n_samples,hidden_layer_sizes[0]))), axis=1))]
         #
         activations.extend(np.empty((batch_size, n_fan_out))
                            for n_fan_out in layer_units[1:])
@@ -398,12 +458,12 @@ class BaseMultilayerPerceptron(six.with_metaclass(ABCMeta, BaseEstimator)):
 
         # Run the Stochastic optimization solver
         if self.solver in _STOCHASTIC_SOLVERS:
-            self._fit_stochastic(X, y, activations, deltas, coef_grads,
+            self._fit_stochastic(X_expanded, y, activations, deltas, coef_grads,
                                  intercept_grads, layer_units, incremental)
 
         # Run the LBFGS solver
         elif self.solver == 'lbfgs':
-            self._fit_lbfgs(X, y, activations, deltas, coef_grads,
+            self._fit_lbfgs(X_expanded, y, activations, deltas, coef_grads,
                             intercept_grads, layer_units)
         return self
 
@@ -543,7 +603,9 @@ class BaseMultilayerPerceptron(six.with_metaclass(ABCMeta, BaseEstimator)):
                     #########################################################################
                     # NAVAR'S
                     # batch_slice of activations
-                    activations[0] = activations[0][batch_slice]
+                    print(X[batch_slice])
+                    activations[0] = X[batch_slice]
+                    # activations[0] = activations[0][batch_slice]
                     #########################################################################
 
 
