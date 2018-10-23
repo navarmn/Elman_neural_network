@@ -124,7 +124,14 @@ class BaseMultilayerPerceptron(six.with_metaclass(ABCMeta, BaseEstimator)):
                 activations_buffer[i + 1][j] += self.intercepts_[i]
                 # For the last hidden layer
                 if (i + 1) != (self.n_layers_ - 1):
-                    activations_buffer[i + 1][j] = hidden_activation(activations_buffer[i + 1][j])
+                    buffer = hidden_activation(activations_buffer[i + 1][j])
+                    activations_buffer[i + 1][j] = buffer
+                    if (i == 0) and (j != activations_buffer[0].shape[0] - 1):
+                        activations_buffer[0][j + 1][self._n_features:] = buffer
+                        # print(activations_buffer[0])
+                    elif (i == 0) and (j == activations_buffer[0].shape[0] - 1):
+                        output_next_batch = buffer
+
                     #################################################
                     # NAVAR'S
                     # ---------
@@ -144,7 +151,8 @@ class BaseMultilayerPerceptron(six.with_metaclass(ABCMeta, BaseEstimator)):
             activations_buffer[i + 1][j] = output_activation(activations_buffer[i + 1][j])
 
         activations = activations_buffer
-        return activations
+        self._output_next_batch = output_next_batch
+        return activations, output_next_batch
 
 ######## Here
 
@@ -281,8 +289,13 @@ class BaseMultilayerPerceptron(six.with_metaclass(ABCMeta, BaseEstimator)):
         n_samples = X.shape[0]
 
         # Forward propagate
-        activations = self._forward_pass(activations)
-
+        # activations = self._forward_pass(activations)
+        #####################################################
+        # NAVAR'S
+        # The function now returns the last output from the batch
+        #####################################################
+        activations, input_next_batch = self._forward_pass(activations)
+        #####################################################
         # Get loss
         loss_func_name = self.loss
         if loss_func_name == 'log_loss' and self.out_activation_ == 'logistic':
@@ -316,7 +329,7 @@ class BaseMultilayerPerceptron(six.with_metaclass(ABCMeta, BaseEstimator)):
                 i - 1, n_samples, activations, deltas, coef_grads,
                 intercept_grads)
 
-        return loss, coef_grads, intercept_grads
+        return loss, coef_grads, intercept_grads, input_next_batch
 
     def _initialize(self, y, layer_units):
         # set all attributes, allocate weights etc for first call
@@ -597,19 +610,30 @@ class BaseMultilayerPerceptron(six.with_metaclass(ABCMeta, BaseEstimator)):
                 # Shuffle dataset is not necessary anymore.
                 # X, y = shuffle(X, y, random_state=self._random_state)
                 #############################################################################
+                #############################################################################
+                # NAVAR'S
+                # create counter of number of batches
+                #############################################################################
+                batch_counter = 0
                 accumulated_loss = 0.0
                 for batch_slice in gen_batches(n_samples, batch_size):
+                    batch_counter += 1
                     # activations[0] = X[batch_slice]
                     #########################################################################
                     # NAVAR'S
                     # batch_slice of activations
-                    print(X[batch_slice])
-                    activations[0] = X[batch_slice]
+                    if batch_counter != 1:
+                        activations[0] = X[batch_slice]
+                        activations[0][0,self._n_features:] = input_next_batch
+                        # print(X[batch_slice])
+                    else:
+                        # print(X[batch_slice])
+                        activations[0] = X[batch_slice]
                     # activations[0] = activations[0][batch_slice]
                     #########################################################################
 
 
-                    batch_loss, coef_grads, intercept_grads = self._backprop(
+                    batch_loss, coef_grads, intercept_grads, input_next_batch = self._backprop(
                         X[batch_slice], y[batch_slice], activations, deltas,
                         coef_grads, intercept_grads)
                     accumulated_loss += batch_loss * (batch_slice.stop -
@@ -767,7 +791,15 @@ class BaseMultilayerPerceptron(six.with_metaclass(ABCMeta, BaseEstimator)):
             [self.n_outputs_]
 
         # Initialize layers
-        activations = [X]
+        # activations = [X]
+        #####################################################
+        # NAVAR'S
+        # This has to be a list to maintain code operability
+        #####################################################
+        n_samples, _ = X.shape
+
+        X_expanded = np.concatenate((X, np.zeros((n_samples,hidden_layer_sizes[0]))), axis=1)
+        activations = [X_expanded]
 
         for i in range(self.n_layers_ - 1):
             activations.append(np.empty((X.shape[0],
